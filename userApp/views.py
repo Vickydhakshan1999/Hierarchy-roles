@@ -511,9 +511,9 @@ def view_user_with_token(request, user_id):
     View a user's details only if the authenticated user has the required permissions.
     """
     user = request.user  # Get the authenticated user from the request object
-
+    
     # Check if the user has permission to view users based on group permissions
-    permission_code = 'can_view_user'  # Replace with the correct permission for your app
+    permission_code = 'add_user_view'  
     permission = Permission.objects.filter(codename=permission_code).first()
     if not permission:
         raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
@@ -634,5 +634,22 @@ def export_users_to_excel(request):
 
     return response
 
+# Prepare a list of users with their groups
+@api_view(['GET'])
+def get_all_users_with_groups(request):
+    # Query all users
+    users = User.objects.all()
+
+    
+    user_data = []
+    for user in users:
+        user_data.append({
+            "id": user.id,
+            "username": user.name,
+            "email": user.email,
+            "groups": [group.name for group in user.groups.all()]  
+        })
+
+    return Response(user_data)
 
 

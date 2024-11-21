@@ -43,6 +43,24 @@ INSTALLED_APPS = [
      'userApp',
 ]
 
+
+# Configure JWT authentication
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+# Optional: Configure JWT settings
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': True,
+}
 AUTH_USER_MODEL = 'userApp.User'
 
 TENANT_MODEL = 'userApp.Tenant'
@@ -84,7 +102,7 @@ WSGI_APPLICATION = 'custom.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'shenew',
+        'NAME': 'customfield',
         'USER': 'root',
         'PASSWORD': 'Vicky@123',
         'HOST': 'localhost',

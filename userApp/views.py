@@ -3,8 +3,8 @@ from django_access_point.models.user import USER_TYPE_CHOICES, USER_STATUS_CHOIC
 from django_access_point.views.custom_field import CustomFieldViewSet
 from django_access_point.views.crud import CrudViewSet
 from django.contrib.auth import get_user_model
-
-
+from rest_framework.exceptions import PermissionDenied
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import Group
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -12,25 +12,22 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
-
-# from userApp.permissions import IsAdminUser
-
 from .models import User, UserCustomField, UserCustomFieldValue
 from .serializers import UserSerializer, UserCustomFieldSerializer
 from rest_framework.permissions import IsAuthenticated
-# from .permissions import IsAdmin, IsManager, IsAdminOrManager
-
-
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from rest_framework.decorators import api_view, permission_classes
-
 from django.contrib.auth.hashers import check_password
-
-
+from .serializers import UserDetailsSerializer
+import openpyxl
+from rest_framework.views import APIView
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font
+from userApp.models import User 
 # @permission_classes([IsAuthenticated, IsAdminUser])
 class PlatformUser(CrudViewSet):
     queryset = User.objects.filter(user_type=USER_TYPE_CHOICES[0][0]).exclude(
@@ -70,13 +67,16 @@ class PlatformUser(CrudViewSet):
         
         # Return the response with the saved user data
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
 
 
-# Login api
+  
+# Login API
+
 @api_view(['POST'])
-def login_view(request):
-    # Get the email and password from the request
+def login(request):
+    # return/ Response("success")
     email = request.data.get('email')
     password = request.data.get('password')
 
@@ -87,32 +87,26 @@ def login_view(request):
         # Fetch the user by email
         User = get_user_model()
         user = User.objects.get(email=email)
-
-        # Compare plain-text password directly
+        print(user.password)
+        print(password)
+        # Compare plain text password directly
         if user.password == password:
-            # Check user group only after password validation
-            if user.groups.filter(name='Manager').exists():
-                return Response({'Restricted': 'Managers are not allowed to log in.'}, status=status.HTTP_403_FORBIDDEN)
-            elif user.groups.filter(name='Admin').exists():
-                return Response({
-                    'message': 'Login successful',
-                    'user_id': user.id,
-                    'username': user.name,
-                    'role': 'Admin',
-                    'access': 'View only'
-                }, status=status.HTTP_200_OK)
-            else:
-                return Response({
-                    'message': 'Login successful',
-                    'user_id': user.id,
-                    'username': user.name,
-                    'role': 'Other',
-                }, status=status.HTTP_200_OK)
+            
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+
+            return Response({
+                "message": "Login successful",
+                "user_id": user.id,
+                "email": user.email,
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            }, status=status.HTTP_200_OK)
         else:
-            return Response({'error': 'Invalid password'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Incorrect password'}, status=status.HTTP_401_UNAUTHORIZED)
     except User.DoesNotExist:
         return Response({'error': 'User does not exist'}, status=status.HTTP_404_NOT_FOUND)
-    
+
 
 class PlatformUserCustomField(CustomFieldViewSet):
     queryset = UserCustomField.objects.filter(status=CUSTOM_FIELD_STATUS[1][0])
@@ -140,7 +134,7 @@ def create_group(request):
 
 # List all groups
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+# @permission_classes([IsAuthenticated])
 def list_groups(request):
     """
     This view returns a list of all groups.
@@ -152,7 +146,7 @@ def list_groups(request):
 
 # Retrieve a specific group by its ID
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+# @permission_classes([IsAuthenticated])
 def retrieve_group(request, group_id):
     """
     This view returns details of a single group.
@@ -241,7 +235,7 @@ def create_permission(request):
 
 # List all permissions (only for authenticated users)
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+# @permission_classes([IsAuthenticated])
 def list_permissions(request):
     permissions = Permission.objects.all().values('id', 'name', 'codename', 'content_type__model')
     return Response({'permissions': list(permissions)}, status=status.HTTP_200_OK)
@@ -265,7 +259,7 @@ def retrieve_permission(request, permission_id):
 
 # Update a permission by ID (only for authenticated users)
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+# @permission_classes([IsAuthenticated])
 def update_permission(request, permission_id):
     try:
         permission = Permission.objects.get(id=permission_id)
@@ -286,7 +280,7 @@ def update_permission(request, permission_id):
 
 # Delete a permission by ID (only for authenticated users)
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+# @permission_classes([IsAuthenticated])
 def delete_permission(request, permission_id):
     try:
         permission = Permission.objects.get(id=permission_id)
@@ -298,42 +292,53 @@ def delete_permission(request, permission_id):
 
 # ..............
 # maping permission to group
+# 
+
 @api_view(['POST'])
 def assign_permission_to_group(request):
+    # Get group_name and permission_codenames from the form data
     group_name = request.data.get('group_name')
-    permission_codename = request.data.get('permission_codename')
-    
-    if not all([group_name, permission_codename]):
+    permission_codenames = request.data.getlist('permission_codenames')
+
+    # Validate input
+    if not group_name or not permission_codenames:
         return Response(
-            {'detail': 'Group name and permission codename are required.'},
+            {'detail': 'Group name and permission codenames are required.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
+    if isinstance(permission_codenames[0], str):
+        permission_codenames = permission_codenames[0].strip('[]').replace(' ', '').split(',')
+
+
     try:
         # Get the group by name
         group = Group.objects.get(name=group_name)
-        
-        # Get the permission by codename
-        permission = Permission.objects.get(codename=permission_codename)
-        
-        # Add permission to the group
-        group.permissions.add(permission)
-        
+        print(permission_codenames)
+
+        # Fetch permissions based on the codenames
+        permissions = Permission.objects.filter(codename__in=permission_codenames)
+
+        # Validate that all requested permissions exist
+        if len(permissions) != len(permission_codenames):
+            missing_permissions = set(permission_codenames) - set(permissions.values_list('codename', flat=True))
+            return Response(
+                {'detail': f'The following permissions do not exist: {", ".join(missing_permissions)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Add permissions to the group
+        group.permissions.add(*permissions)
+
         return Response(
-            {'detail': f'Permission "{permission_codename}" added to group "{group_name}" successfully.'},
+            {'detail': f'Permissions {permission_codenames} added to group "{group_name}" successfully.'},
             status=status.HTTP_200_OK
         )
     except Group.DoesNotExist:
         return Response(
             {'detail': f'Group "{group_name}" does not exist.'},
             status=status.HTTP_400_BAD_REQUEST
-        )
-    except Permission.DoesNotExist:
-        return Response(
-            {'detail': f'Permission with codename "{permission_codename}" does not exist.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
+        )       
 # .........
 # mapping user to group
 @api_view(['POST'])
@@ -364,6 +369,270 @@ def assign_user_to_group(request):
 
 
 
+#  Create API
 
-
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
+def create_user_with_token(request):
+    """
+    Create a new user only if the authenticated user has the required permissions.
+    """
+    user = request.user  # Get the authenticated user from the request object
     
+    # Check if the user has permission to create users based on group permissions
+    permission_code = 'can_create_user'  # Replace with the correct permission for your app
+    permission = Permission.objects.filter(codename=permission_code).first()
+    print(permission)
+    if not permission:
+        raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
+
+    # Check if any group the user belongs to has this permission
+    if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
+        raise PermissionDenied("You do not have permission to create users.")
+
+    # Validate the request data
+    serializer = UserSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # Save the new user
+    new_user = serializer.save()
+
+    # Optionally, assign a group to the new user if provided
+    group_name = request.data.get('group_name')
+    if group_name:
+        try:
+            group = Group.objects.get(name=group_name)
+            new_user.groups.add(group)
+        except Group.DoesNotExist:
+            return Response({"detail": f"Group '{group_name}' does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {
+            "message": "User created successfully.",
+            "user": serializer.data
+        },
+        status=status.HTTP_201_CREATED
+    )
+
+
+
+# Delete Api
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
+def delete_user_with_token(request, user_id):
+    """
+    Delete a user only if the authenticated user has the required permissions.
+    """
+    user = request.user  # Get the authenticated user from the request object
+    
+    # Check if the user has permission to delete users based on group permissions
+    permission_code = 'can_delete_user'  # Replace with the correct permission for your app
+    permission = Permission.objects.filter(codename=permission_code).first()
+    if not permission:
+        raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
+
+    # Check if any group the user belongs to has this permission
+    if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
+        raise PermissionDenied("You do not have permission to delete users.")
+
+    # Use get_user_model() to get the correct user model dynamically
+    User = get_user_model()
+
+    # Check if the user to be deleted exists (using your custom User model)
+    try:
+        user_to_delete = User.objects.get(id=user_id)  # Using the custom User model here
+    except User.DoesNotExist:
+        return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Delete the user
+    user_to_delete.delete()
+
+    return Response(
+        {"message": "User deleted successfully."},
+        status=status.HTTP_204_NO_CONTENT
+    )
+
+# Edit API
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
+def edit_user_with_token(request, user_id):
+    """
+    Edit a user only if the authenticated user has the required permissions.
+    """
+    user = request.user  # Get the authenticated user from the request object
+
+    # Check if the user has permission to edit users based on group permissions
+    permission_code = 'can_edit_user'  # Replace with the correct permission for your app
+    permission = Permission.objects.filter(codename=permission_code).first()
+    if not permission:
+        raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
+
+    # Check if any group the user belongs to has this permission
+    if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
+        raise PermissionDenied("You do not have permission to edit users.")
+
+    # Use get_user_model() to get the correct user model dynamically
+    User = get_user_model()
+
+    # Check if the user to be edited exists (using your custom User model)
+    try:
+        user_to_edit = User.objects.get(id=user_id)  # Using the custom User model here
+    except User.DoesNotExist:
+        return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Ensure that the current user is not trying to edit themselves if restricted (optional)
+    if user.id == user_to_edit.id:
+        return Response({"detail": "You cannot edit your own details."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate and update the user data using the serializer
+    serializer = UserSerializer(user_to_edit, data=request.data, partial=True)  # partial=True allows updating only the fields sent
+    serializer.is_valid(raise_exception=True)
+
+    # Save the updated user
+    serializer.save()
+
+    return Response(
+        {
+            "message": "User updated successfully.",
+            "user": serializer.data
+        },
+        status=status.HTTP_200_OK
+    )
+
+
+
+#  View API
+api_view(['GET'])
+@permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
+def view_user_with_token(request, user_id):
+    """
+    View a user's details only if the authenticated user has the required permissions.
+    """
+    user = request.user  # Get the authenticated user from the request object
+
+    # Check if the user has permission to view users based on group permissions
+    permission_code = 'can_view_user'  # Replace with the correct permission for your app
+    permission = Permission.objects.filter(codename=permission_code).first()
+    if not permission:
+        raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
+
+    # Check if any group the user belongs to has this permission
+    if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
+        raise PermissionDenied("You do not have permission to view users.")
+
+    # Use get_user_model() to get the correct user model dynamically
+    User = get_user_model()
+
+    # Check if the user to be viewed exists (using your custom User model)
+    try:
+        user_to_view = User.objects.get(id=user_id)  # Using the custom User model here
+    except User.DoesNotExist:
+        return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Serialize and return the user data
+    serializer = UserSerializer(user_to_view)
+
+    return Response(
+        {
+            "message": "User details retrieved successfully.",
+            "user": serializer.data
+        },
+        status=status.HTTP_200_OK
+    )
+
+
+# User_Detail_Create
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
+def create_user_details(request):
+    """
+    Create user details only if the authenticated user has the required permissions.
+    """
+    user = request.user  # Get the authenticated user from the request object
+    
+    # Check if the user has permission to create user details based on group permissions
+    permission_code = 'add_user_details'  
+    permission = Permission.objects.filter(codename=permission_code).first()
+    
+    if not permission:
+        raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
+
+    # Check if any group the user belongs to has this permission
+    if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
+        raise PermissionDenied("You do not have permission to create user details.")
+
+    # Validate the request data
+    serializer = UserDetailsSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    # Save the new user details
+    user_id = request.data.get('user_id')
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Save the user details for the specific user
+    user_details = serializer.save(user=user)
+
+    # Optionally, you can perform additional actions like assigning more fields or modifying the details
+    # For example, if the address is provided, you could process it further here
+
+    return Response(
+        {
+            "message": "User details created successfully.",
+            "user_details": serializer.data
+        },
+        status=status.HTTP_201_CREATED
+    )
+
+
+# Export all user to excel
+
+@api_view(['GET'])
+def export_users_to_excel(request):
+    """
+    Export a list of users to an Excel file.
+    """
+    # Create a workbook and a worksheet
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Users"
+
+    # Define column headers
+    headers = ['ID', 'Username', 'Email', 'Phone Number']
+
+    # Apply bold style to headers
+    bold_font = Font(bold=True)
+
+    # Write headers to the first row
+    for col_num, header in enumerate(headers, 1):
+        col_letter = get_column_letter(col_num)
+        ws[f'{col_letter}1'] = header
+        ws[f'{col_letter}1'].font = bold_font
+
+    # Fetch users data
+    users = User.objects.all()
+
+    # Write user data to the sheet
+    for row_num, user in enumerate(users, 2):
+        
+        ws[f'A{row_num}'] = user.id
+        ws[f'B{row_num}'] = user.name  
+        ws[f'C{row_num}'] = user.email
+        ws[f'F{row_num}'] = user.phone_no 
+
+    # Create a response to download the Excel file
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename=users.xlsx'
+
+    # Save the workbook to the response
+    wb.save(response)
+
+    return response
+
+
+

@@ -26,4 +26,14 @@ class UserCustomFieldValue(CustomFieldValueBase):
     user_submission = models.ForeignKey(User, related_name="user_custom_field_values", on_delete=models.CASCADE)
     custom_field = models.ForeignKey(UserCustomField, on_delete=models.CASCADE)
 
+class UserDetails(models.Model):
+    # related_name = allows you to access the UserDetails instance from the User 
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="details")
+    address = models.TextField()
+    date_of_birth = models.DateField(null=True, blank=True)
+    
+
+    def __str__(self):
+        return f"Details of {self.user}"    
+
 

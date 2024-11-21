@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import create_group, list_groups, login_view, retrieve_group, update_group, delete_group
+from .views import  create_group, create_user_details, create_user_with_token, delete_user_with_token, export_users_to_excel, list_groups, login, retrieve_group, update_group, delete_group
 from .views import PlatformUser, PlatformUserCustomField
 from . import views
 
@@ -27,7 +27,24 @@ urlpatterns = [
 
     path('users/assign_group/', views.assign_user_to_group, name='assign_user_to_group'),
 
-    path('platform/login/', login_view, name='login'),
+    # path('platform/login/', login_view, name='login'),
+
+    path('login/', login, name='login'),
+
+    path('create-user/', create_user_with_token, name='create_user_with_token'),
+
+    path('delete-user/<int:user_id>/', delete_user_with_token, name='delete_user_with_token'),
+
+
+    # URL for the View User API
+    path('view-user/<int:user_id>/', views.view_user_with_token, name='view_user'),
+
+    # URL for the Edit User API
+    path('edit-user/<int:user_id>/', views.edit_user_with_token, name='edit_user'),
+    
+    path("user-details/create/", create_user_details, name="create_user_details"),
+
+    path('export_users/', export_users_to_excel, name='export_users_to_excel'),
 
 ]
 

@@ -23,10 +23,10 @@ class UserSerializer(CrudSerializer):
         fields = ["name", "email", "phone_no", "password"]
         
 
-        # def create(self, validated_data):
-        #    print
-        # # Avoid handling groups here; handle them in perform_create
-        #    return super().create(validated_data)     
+from rest_framework import serializers
+from .models import UserDetails
 
-
-
+class UserDetailsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserDetails
+        fields = ['user_id', 'address', 'date_of_birth']  

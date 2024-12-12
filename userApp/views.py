@@ -29,7 +29,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font
 from userApp.models import User 
 from .permissions import CanCreateUserPermission, CanDeleteUserPermission, CanEditUserPermission, CanViewUserPermission
-from charts.views import generate_bar_chart  # Assuming generate_bar_chart is in the charts app
+
 
 class PlatformUser(CrudViewSet):
     queryset = User.objects.filter(user_type=USER_TYPE_CHOICES[0][0]).exclude(
@@ -97,7 +97,7 @@ def login(request):
             # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
 
-            chart_url = generate_bar_chart(request)  # This will save the chart and return the URL
+            
 
             return Response({
                 "message": "Login successful",

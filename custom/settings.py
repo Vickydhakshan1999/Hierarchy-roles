@@ -40,7 +40,9 @@ INSTALLED_APPS = [
     'rest_framework',
     'django_filters',
     'django_access_point',
-     'userApp',
+    'userApp',
+    'charts'
+    
 ]
 
 
@@ -80,8 +82,11 @@ ROOT_URLCONF = 'custom.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
+        'DIRS': [
+            # Add the app's templates directory
+            BASE_DIR / 'charts/templates',
+        ],
+        'APP_DIRS': True,  # Ensure Django looks inside each app's templates directory
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.debug',
@@ -104,8 +109,8 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'customfield',
         'USER': 'root',
-        'PASSWORD': 'Vicky@123',
-        'HOST': 'localhost',
+        'PASSWORD': 'root@123',
+        'HOST': '127.0.0.1',
         'PORT': '3306'
     }
 }
@@ -152,3 +157,11 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+import os
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+

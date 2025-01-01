@@ -41,36 +41,51 @@ class PlatformUser(CrudViewSet):
 
 
     def create(self, request, *args, **kwargs):
-        # Initialize the serializer with the request data
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        print(f"Request data: {request.data}") 
+    # Initialize the serializer with the request data
+     serializer = self.get_serializer(data=request.data)
+     serializer.is_valid(raise_exception=True)
 
-        # Save the user without groups initially
-        user = serializer.save()
+    # Save the user without groups initially
+     user = serializer.save()
+     user.set_password(request.data.get("password"))  # Hash and set the password
+     user.save()
 
-        user.password = request.data.get("password")
+    # Get the group ID from the request data
+     group_id = request.data.get("group", None)
+     if not group_id:
+        raise ValidationError(detail="Group ID is required.")
 
-        # Get the group ID from the request data
-        group_id = request.data.get("group", None)  # Fetch the group ID from request data
-        print(f"Group ID from request: {group_id}")  # Debugging line
-        
+    # Ensure the group exists and assign it to the user
+     try:
+        group = Group.objects.get(id=group_id)
+     except Group.DoesNotExist:
+        raise NotFound(detail="Group with the given ID does not exist.")
 
-        if group_id:
-            # Ensure the group exists and assign it to the user
-            try:
-                group = Group.objects.get(id=group_id)
-                user.groups.clear()  # Clear any existing groups to ensure only the selected group is assigned
-                user.groups.add(group)  # Add the group to the user
-                user.save()  # Save the user with the assigned group
-                print(f"Group '{group.name}' assigned to user '{user.name}'.")  # Debugging line
-            except Group.DoesNotExist:
-                raise NotFound(detail="Group with the given ID does not exist.")
-        
-        # Return the response with the saved user data
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    # Assign the group to the user
+     user.groups.clear()  # Clear any existing groups
+     user.groups.add(group)  # Add the group to the user
+     user.save()
+
+    # Query the role hierarchy
+     parent_roles = RoleHierarchy.objects.filter(child_role=group)
+    
+    # Debug: Check the role hierarchy
+     print(f"Parent roles for group '{group.name}': {parent_roles}")
+
+    # Enforce role hierarchy: ensure the user belongs to a valid hierarchy
+     if parent_roles.exists():
+        # Log the role hierarchy for debugging
+        hierarchy_names = [p.parent_role.name for p in parent_roles]
+        print(f"User '{user.name}' added to group '{group.name}' under hierarchy: {hierarchy_names}")
+     else:
+        # No parent roles found
+        print(f"Group '{group.name}' does not have a parent role in the hierarchy.")
+
+    # Return the response with the saved user data
+     return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required   
 
 
   
@@ -119,7 +134,8 @@ class PlatformUserCustomField(CustomFieldViewSet):
 
 # ....................
 
-# Create a new group
+# Create a new group..........................
+
 @api_view(['POST'])
 
 def create_group(request):
@@ -371,189 +387,9 @@ def assign_user_to_group(request):
 
 
 
-
-
-# #  Create API
-
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
-# def create_user_with_token(request):
-#     """
-#     Create a new user only if the authenticated user has the required permissions.
-#     """
-#     user = request.user  # Get the authenticated user from the request object
-    
-#     # Check if the user has permission to create users based on group permissions
-#     permission_code = 'add_user_create'  # Replace with the correct permission for your app
-#     permission = Permission.objects.filter(codename=permission_code).first()
-#     print(permission)
-#     if not permission:
-#         raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
-
-#     # Check if any group the user belongs to has this permission
-#     if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
-#         raise PermissionDenied("You do not have permission to create users.")
-
-#     # Validate the request data
-#     serializer = UserSerializer(data=request.data)
-#     serializer.is_valid(raise_exception=True)
-
-#     # Save the new user
-#     new_user = serializer.save()
-
-#     # Optionally, assign a group to the new user if provided
-#     group_name = request.data.get('group_name')
-#     if group_name:
-#         try:
-#             group = Group.objects.get(name=group_name)
-#             new_user.groups.add(group)
-#         except Group.DoesNotExist:
-#             return Response({"detail": f"Group '{group_name}' does not exist."}, status=status.HTTP_400_BAD_REQUEST)
-
-#     return Response(
-#         {
-#             "message": "User created successfully.",
-#             "user": serializer.data
-#         },
-#         status=status.HTTP_201_CREATED
-#     )
-
-
-
-# # Delete Api
-
-# @api_view(['DELETE'])
-# @permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
-# def delete_user_with_token(request, user_id):
-#     """
-#     Delete a user only if the authenticated user has the required permissions.
-#     """
-#     user = request.user  # Get the authenticated user from the request object
-    
-#     # Check if the user has permission to delete users based on group permissions
-#     permission_code = 'can_delete_user'  # Replace with the correct permission for your app
-#     permission = Permission.objects.filter(codename=permission_code).first()
-#     if not permission:
-#         raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
-
-#     # Check if any group the user belongs to has this permission
-#     if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
-#         raise PermissionDenied("You do not have permission to delete users.")
-
-#     # Use get_user_model() to get the correct user model dynamically
-#     User = get_user_model()
-
-#     # Check if the user to be deleted exists (using your custom User model)
-#     try:
-#         user_to_delete = User.objects.get(id=user_id)  # Using the custom User model here
-#     except User.DoesNotExist:
-#         return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-#     # Delete the user
-#     user_to_delete.delete()
-
-#     return Response(
-#         {"message": "User deleted successfully."},
-#         status=status.HTTP_204_NO_CONTENT
-#     )
-
-# # Edit API
-
-# @api_view(['PATCH'])
-# @permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
-# def edit_user_with_token(request, user_id):
-#     """
-#     Edit a user only if the authenticated user has the required permissions.
-#     """
-#     user = request.user  # Get the authenticated user from the request object
-
-#     # Check if the user has permission to edit users based on group permissions
-#     permission_code = 'can_edit_user'  # Replace with the correct permission for your app
-#     permission = Permission.objects.filter(codename=permission_code).first()
-#     if not permission:
-#         raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
-
-#     # Check if any group the user belongs to has this permission
-#     if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
-#         raise PermissionDenied("You do not have permission to edit users.")
-
-#     # Use get_user_model() to get the correct user model dynamically
-#     User = get_user_model()
-
-#     # Check if the user to be edited exists (using your custom User model)
-#     try:
-#         user_to_edit = User.objects.get(id=user_id)  # Using the custom User model here
-#     except User.DoesNotExist:
-#         return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-#     # Ensure that the current user is not trying to edit themselves if restricted (optional)
-#     if user.id == user_to_edit.id:
-#         return Response({"detail": "You cannot edit your own details."}, status=status.HTTP_400_BAD_REQUEST)
-
-#     # Validate and update the user data using the serializer
-#     serializer = UserSerializer(user_to_edit, data=request.data, partial=True)  # partial=True allows updating only the fields sent
-#     serializer.is_valid(raise_exception=True)
-
-#     # Save the updated user
-#     serializer.save()
-
-#     return Response(
-#         {
-#             "message": "User updated successfully.",
-#             "user": serializer.data
-#         },
-#         status=status.HTTP_200_OK
-#     )
-
-
-
-# #  View API
-# api_view(['GET'])
-# @permission_classes([IsAuthenticated])  # Ensures that only authenticated users can call this view
-# def view_user_with_token(request, user_id):
-#     """
-#     View a user's details only if the authenticated user has the required permissions.
-#     """
-#     user = request.user  # Get the authenticated user from the request object
-    
-#     # Check if the user has permission to view users based on group permissions
-#     permission_code = 'add_user_view'  
-#     permission = Permission.objects.filter(codename=permission_code).first()
-#     if not permission:
-#         raise PermissionDenied(f"Permission '{permission_code}' does not exist.")
-
-#     # Check if any group the user belongs to has this permission
-#     if not any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all()):
-#         raise PermissionDenied("You do not have permission to view users.")
-
-#     # Use get_user_model() to get the correct user model dynamically
-#     User = get_user_model()
-
-#     # Check if the user to be viewed exists (using your custom User model)
-#     try:
-#         user_to_view = User.objects.get(id=user_id)  # Using the custom User model here
-#     except User.DoesNotExist:
-#         return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-#     # Serialize and return the user data
-#     serializer = UserSerializer(user_to_view)
-
-#     return Response(
-#         {
-#             "message": "User details retrieved successfully.",
-#             "user": serializer.data
-#         },
-#         status=status.HTTP_200_OK
-#     )
-
-
-
-
-
-
 # Create API
 @api_view(['POST'])
-@permission_classes([CanCreateUserPermission])  
+# @permission_classes([CanCreateUserPermission])  
 def create_user_with_token(request):
     user = request.user
     
@@ -782,48 +618,206 @@ def get_all_users_with_groups(request):
 
 #  this code is for ElasticSearch
 
-from elasticsearch_dsl.query import Q
-from .documents import UserDocument
+# from elasticsearch_dsl.query import Q
+# from .documents import UserDocument
+# from rest_framework.response import Response
+# from rest_framework.views import APIView
+# from rest_framework.parsers import FormParser, MultiPartParser
+
+# class DynamicSearchView(APIView):
+#     parser_classes = [FormParser, MultiPartParser]
+
+#     def post(self, request, *args, **kwargs):
+#         search_field = request.data.get('field', None)
+#         search_value = request.data.get('value', None)
+
+#         if not search_field or not search_value:
+#             return Response({"error": "Please provide 'field' and 'value' in the request."}, status=400)
+
+#         valid_fields = ['name', 'email', 'phone_no', 'id']
+#         if search_field not in valid_fields:
+#             return Response({"error": f"Invalid field '{search_field}'."}, status=400)
+        
+#         print(search_value,"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk")
+        
+#         # For autocomplete, use 'match_phrase_prefix' query
+#         if search_field in ['name', 'email', 'phone_no']:
+#             # user_query = Q("match_phrase_prefix", **{search_field: search_value})
+#             user_query = Q("wildcard", **{search_field: f"*{search_value}*"})
+
+#         elif search_field == 'id':
+#             # Exact match for IDs
+#             user_query = Q("term", **{search_field: search_value})
+        
+#         # Perform the search and fetch results
+#         user_results = UserDocument.search().query(user_query)
+        
+#         # Convert results to a list of dictionaries
+#         combined_results = {
+#             'users': [hit.to_dict() for hit in user_results]
+#         }
+
+#         # Handle no results
+#         if not combined_results['users']:
+#             return Response({"message": "No users found for the given input."}, status=404)
+
+#         return Response(combined_results)
+
+
+# hierarchy role
+# API to Create Role Hierarchy:
+# This API will allow you to define the parent-child relationship between roles. 
+
+from django.contrib.auth.models import Group
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework import status
+from .models import RoleHierarchy
 
-class DynamicSearchView(APIView):
-    parser_classes = [FormParser, MultiPartParser]
+@api_view(['POST'])
+def create_role_hierarchy(request):
+    """
+    API to create a role hierarchy (parent-child relationship).
+    """
+    parent_role_name = request.data.get('parent_role')
+    child_role_name = request.data.get('child_role')
 
-    def post(self, request, *args, **kwargs):
-        search_field = request.data.get('field', None)
-        search_value = request.data.get('value', None)
+    # Get the parent and child roles (groups)
+    try:
+        parent_role = Group.objects.get(name=parent_role_name)  
+        child_role = Group.objects.get(name=child_role_name)
+    except Group.DoesNotExist:
+        return Response({"detail": "Parent or child role does not exist."}, status=status.HTTP_404_NOT_FOUND)
 
-        if not search_field or not search_value:
-            return Response({"error": "Please provide 'field' and 'value' in the request."}, status=400)
+    # Create the role hierarchy (parent-child relationship)
+    role_hierarchy = RoleHierarchy.objects.create(
+        parent_role=parent_role,
+        child_role=child_role
+    )
 
-        valid_fields = ['name', 'email', 'phone_no', 'id']
-        if search_field not in valid_fields:
-            return Response({"error": f"Invalid field '{search_field}'."}, status=400)
+    return Response({"detail": f"Role hierarchy created: {parent_role_name} → {child_role_name}"}, status=status.HTTP_201_CREATED)
+
+
+# Create leave form and View leave form......................................
+
+from rest_framework import viewsets
+# from rest_framework.permissions import IsAuthenticated
+from .models import LeaveForm
+from .serializers import LeaveFormSerializer
+from .permissions import RoleBasedAccessPermission
+# from django.db.models import Q
+# from .models import RoleHierarchy
+from rest_framework.exceptions import ValidationError
+
         
-        print(search_value,"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk")
-        
-        # For autocomplete, use 'match_phrase_prefix' query
-        if search_field in ['name', 'email', 'phone_no']:
-            # user_query = Q("match_phrase_prefix", **{search_field: search_value})
-            user_query = Q("wildcard", **{search_field: f"*{search_value}*"})
+class LeaveFormViewSet(viewsets.ModelViewSet):
+    queryset = LeaveForm.objects.all()
+    serializer_class = LeaveFormSerializer
+    permission_classes = [IsAuthenticated, RoleBasedAccessPermission]
 
-        elif search_field == 'id':
-            # Exact match for IDs
-            user_query = Q("term", **{search_field: search_value})
-        
-        # Perform the search and fetch results
-        user_results = UserDocument.search().query(user_query)
-        
-        # Convert results to a list of dictionaries
-        combined_results = {
-            'users': [hit.to_dict() for hit in user_results]
-        }
+    def get_queryset(self):
+        """
+        Retrieve leave forms based on the user's role and hierarchy.
+        """
+        user = self.request.user
+        user_groups = user.groups.all()  # Groups the user belongs to
 
-        # Handle no results
-        if not combined_results['users']:
-            return Response({"message": "No users found for the given input."}, status=404)
+        print(user_groups,'----------user_groups')
 
-        return Response(combined_results)
+        leave_form = LeaveForm.objects.none()  # Default empty queryset
+
+        # Ensure the query matches against the correct field (use .values_list('id', flat=True))
+        user_group_ids = user_groups.values_list('id', flat=True)
+        print("User group IDs:", user_group_ids)
+
+        # Fetch parent roles for the current user's groups
+        parent_roles = RoleHierarchy.objects.filter(
+            child_role__id__in=user_group_ids
+        ).values_list('parent_role', flat=True)
+
+        print("Parent Roles:", parent_roles)
+
+        # If the user belongs to a role in the parent role hierarchy (e.g., Admin, Manager), show all leave forms
+        if parent_roles:
+            leave_form = LeaveForm.objects.all()  # Admin or higher roles can see all leave forms
+
+        print("Updated Parent Roles:", parent_roles)
+
+        # Managers: View leave forms of subordinates
+        subordinate_groups = RoleHierarchy.objects.filter(
+            parent_role__in=user_groups
+        ).values_list('child_role', flat=True)
+
+        print(subordinate_groups, '----------subordinate_groups')
+
+        # If the user has subordinate groups, get their leave forms
+        if subordinate_groups:
+            # Fetch leave forms for users in subordinate groups
+            leave_form = LeaveForm.objects.filter(user__groups__id__in=subordinate_groups)
+
+            # Traverse further down the hierarchy for all subordinate groups
+            for group_id in subordinate_groups:
+                # Get child groups under the current group
+                child_groups = RoleHierarchy.objects.filter(parent_role_id=group_id).values_list('child_role', flat=True)
+
+                if child_groups:
+                    print(f"Subordinate groups of group {group_id}: {child_groups}")
+                    # Combine leave forms from child groups
+                    leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=child_groups)
+
+                    # Optionally, you can extend this logic further down the hierarchy if needed
+                    for child_group_id in child_groups:
+                        grandchild_groups = RoleHierarchy.objects.filter(parent_role_id=child_group_id).values_list('child_role', flat=True)
+                        if grandchild_groups:
+                            print(f"Subordinate groups of group {child_group_id}: {grandchild_groups}")
+                            leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=grandchild_groups)
+
+        return leave_form
     
+
+    def create(self, request, *args, **kwargs):
+        """
+        Handle creating a leave form with `user_id`.
+        """
+        print("Incoming data:", request.data)
+        user_id = request.data.get("user_id")
+        if not user_id:
+            raise ValidationError({"detail": "User ID is required."})
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            raise ValidationError({"detail": "User does not exist."})
+
+        # Create the leave form
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=user)
+        print("Created Leave Form Data:", serializer.data)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import RoleHierarchy
+from .serializers import RoleHierarchySerializer
+
+class RoleHierarchyListView(APIView):
+    """
+    API view to retrieve and return the role hierarchy.
+    """
+
+    def get(self, request, *args, **kwargs):
+        # Query all role hierarchies
+        role_hierarchies = RoleHierarchy.objects.all()
+
+        # Serialize the data
+        serializer = RoleHierarchySerializer(role_hierarchies, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)    
+
+
+
+

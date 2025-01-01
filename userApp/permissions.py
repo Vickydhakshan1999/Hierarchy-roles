@@ -68,3 +68,43 @@ class CanViewUserPermission(BasePermission):
 
         
         return any(group.permissions.filter(id=permission.id).exists() for group in user.groups.all())
+
+
+
+from rest_framework.permissions import BasePermission
+from .models import RoleHierarchy
+from django.contrib.auth.models import Group
+
+class RoleBasedAccessPermission(BasePermission):
+    """
+    Custom permission to enforce role-based access for leave forms.
+    """
+
+    def has_permission(self, request, view):
+        # Ensure user is authenticated
+        return request.user and request.user.is_authenticated
+
+    def has_object_permission(self, request, view, obj):
+        user_groups = request.user.groups.all()
+        if not user_groups:
+            self.message = "You do not belong to any group."
+            return False
+
+        # Admin users can access all leave forms
+        if RoleHierarchy.objects.filter(parent_role__name="admin", child_role__in=user_groups).exists():
+            return True
+
+        # Managers can only view leave forms of their subordinates
+        for group in user_groups:
+            role_hierarchy = RoleHierarchy.objects.filter(parent_role=group, child_role=obj.user.groups.first())
+            if role_hierarchy.exists():
+                return True
+
+        # Employees can only view their own leave forms
+        if obj.user == request.user:
+            return True
+
+        self.message = "You do not have permission to access this leave form."
+        return False
+
+  

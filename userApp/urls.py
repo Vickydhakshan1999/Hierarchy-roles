@@ -1,12 +1,15 @@
-from django.urls import path
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from .views import  DynamicSearchView, create_group, create_user_details, create_user_with_token, delete_user_with_token, export_users_to_excel, get_all_users_with_groups, list_groups, login, retrieve_group, update_group, delete_group
+from .views import  LeaveFormViewSet, create_group, create_user_details, create_user_with_token, delete_user_with_token, export_users_to_excel, get_all_users_with_groups, list_groups, login, retrieve_group, update_group, delete_group
 from .views import PlatformUser, PlatformUserCustomField
 from . import views
+from .views import RoleHierarchyListView
 
 router = DefaultRouter()
 router.register(r"custom-fields/platform/users",PlatformUserCustomField,basename="platform.user.custom_fields")
 router.register(r"platform/users", PlatformUser, basename="platform.user")
+# router.register(r'leave-formscreate', LeaveFormcreate, basename='leave-form')
+router.register(r'leaveforms', LeaveFormViewSet)
 
 
 urlpatterns = [
@@ -46,7 +49,17 @@ urlpatterns = [
     
     path('all-users-with-groups/', get_all_users_with_groups, name='get_all_users_with_groups'),
 
-    path('search/', DynamicSearchView.as_view(), name='dynamic-search'),
+    # path('search/', DynamicSearchView.as_view(), name='dynamic-search'),
+
+    # Creating Role Hierarchy:
+
+    path('create_role_hierarchy/', views.create_role_hierarchy, name='create_role_hierarchy'),
+
+    # path('leave-forms/', views.LeaveFormViewSet.as_view({'get': 'list'}), name='leaveform-list'),  
+    path('api/', include(router.urls)),
+
+    path('role-hierarchy/', RoleHierarchyListView.as_view(), name='role-hierarchy-list'),
+   
 ]
 
 urlpatterns += router.urls

@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     'django_access_point',
     'userApp',
     'charts',
-    'django_elasticsearch_dsl'
+    # 'django_elasticsearch_dsl'
     
 ]
 
@@ -107,7 +107,7 @@ WSGI_APPLICATION = 'custom.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'customfield',
+        'NAME': 'newhierarchy',
         'USER': 'root',
         'PASSWORD': 'root@123',
         'HOST': '127.0.0.1',

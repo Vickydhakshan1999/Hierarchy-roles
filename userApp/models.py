@@ -1,4 +1,4 @@
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
 from django.db import models
 
 from django_access_point.models.user import TenantBase, UserBase
@@ -33,7 +33,32 @@ class UserDetails(models.Model):
     date_of_birth = models.DateField(null=True, blank=True)
     
 
+    def __str__(self):  
+        return f"Details of {self.user}"   
+    
+
+class RoleHierarchy(models.Model):
+    parent_role = models.ForeignKey(Group, related_name='parent_roles', on_delete=models.CASCADE)
+    child_role = models.ForeignKey(Group, related_name='child_roles', on_delete=models.CASCADE)
+    # restricted_permissions = models.ManyToManyField(Permission, blank=True) 
+
+    class Meta:
+        unique_together = ('parent_role', 'child_role')  # Prevent duplicate mappings
+
     def __str__(self):
-        return f"Details of {self.user}"    
+        return f'{self.child_role.name} inherits permissions from {self.parent_role.name}'
+    
+
+class LeaveForm(models.Model):
+    # employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leave_forms')
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='leave_forms')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField()
+
+    def __str__(self):
+        return f"{self.employee.xname} - {self.start_date} to {self.end_date}"    
+
 
 

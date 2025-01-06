@@ -771,7 +771,7 @@ from rest_framework.exceptions import ValidationError
 #                             print(f"Subordinate groups of group {child_group_id}: {grandchild_groups}")
 #                             leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=grandchild_groups)
 
-#         return leave_form
+#          return leave_form
 
 class LeaveFormViewSet(viewsets.ModelViewSet):
     queryset = LeaveForm.objects.all()
@@ -793,7 +793,7 @@ class LeaveFormViewSet(viewsets.ModelViewSet):
         print("User groups:", list(user_group_names))
 
         # Restrict for Employees (only their own leave forms)
-        if 'Employee1' in user_group_names:
+        if any(group_name.startswith('Employee') for group_name in user_group_names):   
             print(f"Employee {user.name} logged in. Restricting to their leave forms only.")
             return LeaveForm.objects.filter(user=user)
 

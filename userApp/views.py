@@ -694,7 +694,6 @@ def create_role_hierarchy(request):
         parent_role=parent_role,
         child_role=child_role
     )
-
     return Response({"detail": f"Role hierarchy created: {parent_role_name} → {child_role_name}"}, status=status.HTTP_201_CREATED)
 
 
@@ -710,70 +709,119 @@ from .permissions import RoleBasedAccessPermission
 from rest_framework.exceptions import ValidationError
 
         
+# class LeaveFormViewSet(viewsets.ModelViewSet):
+#     queryset = LeaveForm.objects.all()
+#     serializer_class = LeaveFormSerializer
+#     permission_classes = [IsAuthenticated, RoleBasedAccessPermission]
+
+#     def get_queryset(self):
+#         """
+#         Retrieve leave forms based on the user's role and hierarchy.
+#         """
+#         user = self.request.user
+#         user_groups = user.groups.all()  # Groups the user belongs to
+
+#         print(user_groups,'----------user_groups')
+
+#         leave_form = LeaveForm.objects.none()  # Default empty queryset
+
+#         # Ensure the query matches against the correct field (use .values_list('id', flat=True))
+#         user_group_ids = user_groups.values_list('id', flat=True)
+#         print("User group IDs:", user_group_ids)
+
+#         # Fetch parent roles for the current user's groups
+#         parent_roles = RoleHierarchy.objects.filter(
+#             child_role__id__in=user_group_ids
+#         ).values_list('parent_role', flat=True)
+
+#         print("Parent Roles:", parent_roles)
+
+#         # If the user belongs to a role in the parent role hierarchy (e.g., Admin, Manager), show all leave forms
+#         if parent_roles:
+#             leave_form = LeaveForm.objects.all()  # Admin or higher roles can see all leave forms
+
+#         print("Updated Parent Roles:", parent_roles)
+
+#         # Managers: View leave forms of subordinates
+#         subordinate_groups = RoleHierarchy.objects.filter(
+#             parent_role__in=user_groups
+#         ).values_list('child_role', flat=True)
+
+#         print(subordinate_groups, '----------subordinate_groups')
+
+#         # If the user has subordinate groups, get their leave forms
+#         if subordinate_groups:
+#             # Fetch leave forms for users in subordinate groups
+#             leave_form = LeaveForm.objects.filter(user__groups__id__in=subordinate_groups)
+
+#             # Traverse further down the hierarchy for all subordinate groups
+#             for group_id in subordinate_groups:
+#                 # Get child groups under the current group
+#                 child_groups = RoleHierarchy.objects.filter(parent_role_id=group_id).values_list('child_role', flat=True)
+
+#                 if child_groups:
+#                     print(f"Subordinate groups of group {group_id}: {child_groups}")
+#                     # Combine leave forms from child groups
+#                     leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=child_groups)
+
+#                     # Optionally, you can extend this logic further down the hierarchy if needed
+#                     for child_group_id in child_groups:
+#                         grandchild_groups = RoleHierarchy.objects.filter(parent_role_id=child_group_id).values_list('child_role', flat=True)
+#                         if grandchild_groups:
+#                             print(f"Subordinate groups of group {child_group_id}: {grandchild_groups}")
+#                             leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=grandchild_groups)
+
+#         return leave_form
+
 class LeaveFormViewSet(viewsets.ModelViewSet):
     queryset = LeaveForm.objects.all()
     serializer_class = LeaveFormSerializer
-    permission_classes = [IsAuthenticated, RoleBasedAccessPermission]
+    # permission_classes = [IsAuthenticated, RoleBasedAccessPermission]
 
     def get_queryset(self):
         """
         Retrieve leave forms based on the user's role and hierarchy.
         """
         user = self.request.user
-        user_groups = user.groups.all()  # Groups the user belongs to
 
-        print(user_groups,'----------user_groups')
+        # Get the user's groups (roles)
+        user_groups = user.groups.all()
+        user_group_names = user_groups.values_list('name', flat=True)
 
-        leave_form = LeaveForm.objects.none()  # Default empty queryset
+        # Debugging: Log user roles
+        print("Logged-in user:", user.name)  # Use `user.name` here
+        print("User groups:", list(user_group_names))
 
-        # Ensure the query matches against the correct field (use .values_list('id', flat=True))
+        # Restrict for Employees (only their own leave forms)
+        if 'Employee1' in user_group_names:
+            print(f"Employee {user.name} logged in. Restricting to their leave forms only.")
+            return LeaveForm.objects.filter(user=user)
+
+        # Default empty queryset for non-employees
+        leave_form = LeaveForm.objects.none()
+
+        # Explicit fallback for admins (admin sees all leave forms)
+        if 'Admin' in user_group_names:
+            print(f"Admin {user.name} logged in. Returning all leave forms.")
+            return LeaveForm.objects.all()
+
+        # Check if the user is a Manager
         user_group_ids = user_groups.values_list('id', flat=True)
-        print("User group IDs:", user_group_ids)
 
-        # Fetch parent roles for the current user's groups
-        parent_roles = RoleHierarchy.objects.filter(
-            child_role__id__in=user_group_ids
-        ).values_list('parent_role', flat=True)
-
-        print("Parent Roles:", parent_roles)
-
-        # If the user belongs to a role in the parent role hierarchy (e.g., Admin, Manager), show all leave forms
-        if parent_roles:
-            leave_form = LeaveForm.objects.all()  # Admin or higher roles can see all leave forms
-
-        print("Updated Parent Roles:", parent_roles)
-
-        # Managers: View leave forms of subordinates
+        # Fetch subordinate groups for managers
         subordinate_groups = RoleHierarchy.objects.filter(
             parent_role__in=user_groups
         ).values_list('child_role', flat=True)
 
-        print(subordinate_groups, '----------subordinate_groups')
-
-        # If the user has subordinate groups, get their leave forms
+        # If the user is a manager and has subordinate groups, fetch their leave forms
         if subordinate_groups:
-            # Fetch leave forms for users in subordinate groups
+            print(f"Manager {user.name} logged in. Fetching subordinate leave forms.")
             leave_form = LeaveForm.objects.filter(user__groups__id__in=subordinate_groups)
 
-            # Traverse further down the hierarchy for all subordinate groups
-            for group_id in subordinate_groups:
-                # Get child groups under the current group
-                child_groups = RoleHierarchy.objects.filter(parent_role_id=group_id).values_list('child_role', flat=True)
-
-                if child_groups:
-                    print(f"Subordinate groups of group {group_id}: {child_groups}")
-                    # Combine leave forms from child groups
-                    leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=child_groups)
-
-                    # Optionally, you can extend this logic further down the hierarchy if needed
-                    for child_group_id in child_groups:
-                        grandchild_groups = RoleHierarchy.objects.filter(parent_role_id=child_group_id).values_list('child_role', flat=True)
-                        if grandchild_groups:
-                            print(f"Subordinate groups of group {child_group_id}: {grandchild_groups}")
-                            leave_form = leave_form | LeaveForm.objects.filter(user__groups__id__in=grandchild_groups)
-
+        # Managers should not see all leave forms, so we avoid the all() call here
         return leave_form
-    
+
+
 
     def create(self, request, *args, **kwargs):
         """
@@ -788,8 +836,7 @@ class LeaveFormViewSet(viewsets.ModelViewSet):
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
             raise ValidationError({"detail": "User does not exist."})
-
-        # Create the leave form
+       # Create the leave form
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save(user=user)
